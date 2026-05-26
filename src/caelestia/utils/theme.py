@@ -143,8 +143,16 @@ def apply_terms(sequences: str) -> None:
 
 
 @log_exception
-def apply_hypr(conf: str) -> None:
-    write_file(config_dir / "hypr/scheme/current.conf", conf)
+def apply_hypr(colours: dict[str, str]) -> None:
+    primary = colours["primary"]
+    surface  = colours["surface"]
+    lua = (
+        "return {\n"
+        f'  active_border   = "rgba({primary}FF)",\n'
+        f'  inactive_border = "rgba({surface}00)",\n'
+        "}\n"
+    )
+    write_file(config_dir / "hypr/colors.lua", lua)
 
 
 @log_exception
@@ -428,7 +436,7 @@ def apply_colours(colours: dict[str, str], mode: str) -> None:
             if check("enableTerm"):
                 apply_terms(gen_sequences(colours))
             if check("enableHypr"):
-                apply_hypr(gen_conf(colours))
+                apply_hypr(colours)
             if check("enableDiscord"):
                 apply_discord(gen_scss(colours))
             if check("enableSpicetify"):
