@@ -385,7 +385,7 @@ def apply_chromium(colours: dict[str, str]) -> None:
 
 
 def apply_zed(colours: dict[str, str], mode: str) -> None:
-    theme_path = config_dir / "zed/themes/chromashell.json"
+    theme_path = config_dir / "zed/themes/caelestia.json"
     # Zed's file watcher does not detect changes through symlinks,
     # so resolve to a regular file before writing
     if theme_path.is_symlink():
