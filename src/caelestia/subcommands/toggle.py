@@ -90,7 +90,7 @@ class Command:
                 "btop": {
                     "enable": True,
                     "match": [{"class": "btop", "title": "btop", "workspace": {"name": "special:sysmon"}}],
-                    "command": ["foot", "-a", "btop", "-T", "btop", "fish", "-C", "exec btop"],
+                    "command": ["kitty", "--class", "btop", "--title", "btop", "btop"],
                 },
             },
             "todo": {
