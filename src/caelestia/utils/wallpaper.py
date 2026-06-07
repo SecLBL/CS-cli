@@ -181,6 +181,14 @@ def set_wallpaper(wall: Path, no_smart: bool) -> None:
         scheme.mode = smart_opts["mode"]
         scheme.variant = smart_opts["variant"]
 
+    # Refresh pywal colours for the new wallpaper if wal is available
+    if scheme.name == "pywal" and shutil.which("wal"):
+        subprocess.run(
+            ["wal", "-i", str(wall), "-n", "-s", "-t"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
     # Update colours
     scheme.update_colours()
     apply_colours(scheme.colours, scheme.mode)
