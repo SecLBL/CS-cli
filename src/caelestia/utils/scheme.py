@@ -154,7 +154,21 @@ class Scheme:
             self._mode = modes[0]
 
     def _update_colours(self) -> None:
-        if self.name == "dynamic":
+        if self.name == "pywal":
+            from caelestia.utils.pywal import get_colours_from_pywal
+
+            try:
+                self._colours, self._mode = get_colours_from_pywal(self)
+            except FileNotFoundError:
+                if self.notify:
+                    notify(
+                        "-u",
+                        "critical",
+                        "Unable to set pywal scheme",
+                        "No pywal colors found. Run pywal first.",
+                    )
+                raise ValueError("No pywal colors found at ~/.cache/wal/colors.json")
+        elif self.name == "dynamic":
             from caelestia.utils.material import get_colours_for_image
 
             try:
@@ -223,16 +237,18 @@ def get_scheme() -> Scheme:
 
 
 def get_scheme_names() -> list[str]:
-    return [*(f.name for f in scheme_data_dir.iterdir() if f.is_dir()), "dynamic"]
+    return [*(f.name for f in scheme_data_dir.iterdir() if f.is_dir()), "dynamic", "pywal"]
 
 
 def get_scheme_flavours(name: str | None = None) -> list[str]:
     if name is None:
         name = get_scheme().name
 
-    return (
-        ["default", "hard"] if name == "dynamic" else [f.name for f in (scheme_data_dir / name).iterdir() if f.is_dir()]
-    )
+    if name == "pywal":
+        return ["default"]
+    if name == "dynamic":
+        return ["default", "hard"]
+    return [f.name for f in (scheme_data_dir / name).iterdir() if f.is_dir()]
 
 
 def get_scheme_modes(name: str | None = None, flavour: str | None = None) -> list[str]:
@@ -241,7 +257,7 @@ def get_scheme_modes(name: str | None = None, flavour: str | None = None) -> lis
         name = name or scheme.name
         flavour = flavour or scheme.flavour
 
-    if name == "dynamic":
+    if name in ("pywal", "dynamic"):
         return ["light", "dark"]
     else:
         return [f.stem for f in (scheme_data_dir / name / flavour).iterdir() if f.is_file()]
