@@ -3,6 +3,7 @@ from pathlib import Path
 
 from materialyoucolor.hct import Hct
 from materialyoucolor.utils.color_utils import argb_from_rgb
+from materialyoucolor.utils.math_utils import difference_degrees
 
 from caelestia.utils.material.generator import darken, mix
 
@@ -33,12 +34,18 @@ def get_colours_from_pywal(scheme) -> tuple[dict[str, str], str]:
     fg   = c[7]   # color7 — foreground
     bfg  = c[15]  # color15 — bright white
 
-    # Sort accent pairs (bright=color9-14, normal=color1-6) by chroma descending
-    accent_pairs = sorted(
-        [(c[i + 8], c[i]) for i in range(1, 7)],
-        key=lambda p: p[0].chroma,
-        reverse=True,
-    )
+    pairs = [(c[i + 8], c[i]) for i in range(1, 7)]
+
+    # Primary = highest chroma
+    pairs.sort(key=lambda p: p[0].chroma, reverse=True)
+    primary_hue = pairs[0][0].hue
+
+    # Secondary/tertiary = highest chroma weighted by hue distance from primary
+    # so contrasting colours (e.g. gold vs blue) beat same-hue neighbours
+    def _contrast_score(pair: tuple) -> float:
+        return pair[0].chroma * (1 + difference_degrees(pair[0].hue, primary_hue) / 180)
+
+    accent_pairs = [pairs[0]] + sorted(pairs[1:], key=_contrast_score, reverse=True)
 
     def br(n: int) -> Hct: return accent_pairs[n][0]
     def nm(n: int) -> Hct: return accent_pairs[n][1]
