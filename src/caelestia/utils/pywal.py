@@ -45,7 +45,10 @@ def get_colours_from_pywal(scheme) -> tuple[dict[str, str], str]:
     def _contrast_score(pair: tuple) -> float:
         return pair[0].chroma * (1 + difference_degrees(pair[0].hue, primary_hue) / 180)
 
-    accent_pairs = [pairs[0]] + sorted(pairs[1:], key=_contrast_score, reverse=True)
+    ranked = [pairs[0]] + sorted(pairs[1:], key=_contrast_score, reverse=True)
+    # Swap primary and secondary so the most contrasting colour is primary
+    ranked[0], ranked[1] = ranked[1], ranked[0]
+    accent_pairs = ranked
 
     def br(n: int) -> Hct: return accent_pairs[n][0]
     def nm(n: int) -> Hct: return accent_pairs[n][1]
