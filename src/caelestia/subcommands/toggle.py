@@ -87,10 +87,10 @@ class Command:
                 },
             },
             "sysmon": {
-                "btop": {
+                "mission-center": {
                     "enable": True,
-                    "match": [{"class": "btop", "title": "btop", "workspace": {"name": "special:sysmon"}}],
-                    "command": ["kitty", "--class", "btop", "--title", "btop", "btop"],
+                    "match": [{"class": "io.missioncenter.MissionCenter", "workspace": {"name": "special:sysmon"}}],
+                    "command": ["missioncenter"],
                 },
             },
             "todo": {
