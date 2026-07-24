@@ -120,7 +120,8 @@ class PackageInstaller(ABC):
     # --- Abstract methods ---
 
     @abstractmethod
-    def install(self, packages: list[str]) -> None: ...
+    def install(self, packages: list[str]) -> list[str]:
+        """Install `packages`, returning their real installed names (resolving provides, e.g. awk -> gawk)."""
 
     @abstractmethod
     def remove(self, packages: list[str]) -> None: ...
@@ -147,9 +148,10 @@ class PackageInstaller(ABC):
 class NoopInstaller(PackageInstaller):
     """Used off Arch, where the dots' packages are not available via pacman/AUR."""
 
-    def install(self, packages: list[str]) -> None:
+    def install(self, packages: list[str]) -> list[str]:
         if packages:
             info(f"Skipping package install (not on Arch): {', '.join(packages)}")
+        return packages
 
     def remove(self, packages: list[str]) -> None:
         if packages:
@@ -174,28 +176,40 @@ class ArchInstaller(PackageInstaller):
         self.helper = helper
         self.flags = ["--noconfirm"] if noconfirm else []
 
-    def install(self, packages: list[str], explicit: bool = True) -> None:
+    def install(self, packages: list[str], explicit: bool = True) -> list[str]:
         if not packages:
-            return
+            return []
 
         cmd = [self.helper, "-S", "--needed", *self.flags]
         if not explicit:
             cmd.append("--asdeps")  # Set install reason to dep (does not affect already installed packages)
         _try_run(cmd + packages, f"failed to install packages: {', '.join(packages)}")
 
-        # Force install reason to explicit install
+        # Resolve virtual/`provides` names (e.g. awk -> gawk)
+        resolved = [self._installed_name(pkg) for pkg in packages]
+
+        # Force install reason to explicit install (`-D` only accepts real installed names)
         if explicit:
-            # `-D` only accepts real installed names, so resolve any virtual/`provides` names (e.g. awk -> gawk)
-            resolved = [self._installed_name(pkg) for pkg in packages]
             try:
                 subprocess.run([self.helper, "-D", "--asexplicit", *self.flags, *resolved], check=True)
             except (subprocess.CalledProcessError, FileNotFoundError):
                 warn(f"failed to mark packages as explicitly installed: {', '.join(resolved)}")
 
+        # Return real names to be stored in dots state
+        return resolved
+
     def remove(self, packages: list[str]) -> None:
         if not packages:
             return
-        _try_run([self.helper, "-Rns", *self.flags, *packages], f"failed to remove packages: {', '.join(packages)}")
+
+        # Skip packages that aren't installed
+        installed = [pkg for pkg in packages if self.is_installed(pkg)]
+        if skipped := [pkg for pkg in packages if pkg not in installed]:
+            info(f"Already removed, skipping: {', '.join(skipped)}")
+        if not installed:
+            return
+
+        _try_run([self.helper, "-Rns", *self.flags, *installed], f"failed to remove packages: {', '.join(installed)}")
 
     def build_install(self, directory: Path) -> list[str]:
         fields = _read_srcinfo(directory)
@@ -220,7 +234,7 @@ class ArchInstaller(PackageInstaller):
 
         return names
 
-    def _query(self, package: str) -> tuple[str, str] | None:
+    def query(self, package: str) -> tuple[str, str] | None:
         """Return the installed (name, version) of `package`, resolving `provides` (e.g. awk -> gawk), or None."""
 
         result = subprocess.run(
@@ -231,6 +245,7 @@ class ArchInstaller(PackageInstaller):
         )
         if result.returncode != 0:
             return None
+
         # `pacman -Q` resolves provides and prints "<real name> <version>"
         parts = result.stdout.split()
         return (parts[0], parts[1]) if len(parts) >= 2 else None
@@ -238,12 +253,12 @@ class ArchInstaller(PackageInstaller):
     def _installed_name(self, package: str) -> str:
         """Resolve `package` to its real installed name (handles provides), falling back to the given name."""
 
-        query = self._query(package)
+        query = self.query(package)
         return query[0] if query else package
 
     def installed_version(self, package: str) -> str | None:
-        query = self._query(package)
-        return query[1] if query else None
+        query = self.query(package)
+        return query[1] if query and query[0] == package else None  # Name is checked exactly
 
     def needs_rebuild(self, directory: Path, packages: list[str]) -> bool:
         built = _srcinfo_version(_read_srcinfo(directory))
