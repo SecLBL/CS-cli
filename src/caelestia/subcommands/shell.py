@@ -1,7 +1,25 @@
+import os
 import subprocess
 from argparse import Namespace
+from pathlib import Path
 
 from caelestia.utils.paths import c_cache_dir
+
+
+def wayland_env() -> dict[str, str]:
+    # Quickshell only talks to instances on the current display. A TTY has no
+    # WAYLAND_DISPLAY, so IPC would resolve to x11 and fail with exit 255.
+    env = os.environ.copy()
+    if "WAYLAND_DISPLAY" not in env:
+        runtime_dir = Path(env.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+        sockets = sorted(
+            (p for p in runtime_dir.glob("wayland-[0-9]*") if p.is_socket()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if sockets:
+            env["WAYLAND_DISPLAY"] = sockets[0].name
+    return env
 
 
 class Command:
@@ -41,7 +59,7 @@ class Command:
                             print(line, end="")
 
     def shell(self, *args: str) -> str:
-        return subprocess.check_output(["qs", "-c", "caelestia", *args], text=True)
+        return subprocess.check_output(["qs", "-c", "caelestia", *args], text=True, env=wayland_env())
 
     def filter_log(self, line: str) -> bool:
         return f"Cannot open: file://{c_cache_dir}/imagecache/" not in line
