@@ -30,6 +30,15 @@ def running_pid() -> int | None:
     return capture.read_pid(state_dir / "pid")
 
 
+def stable_executable(name: str) -> str:
+    """First match outside the Nix store (e.g. the profile symlink), so the hook survives rebuilds."""
+    for d in os.environ.get("PATH", "").split(":"):
+        path = os.path.join(d, name)
+        if d and not d.startswith("/nix/store/") and os.access(path, os.X_OK):
+            return path
+    return shutil.which(name) or sys.argv[0]
+
+
 def estimate_mb(settings: dict[str, Any], tracks: int) -> float | None:
     """RAM/disk the buffer needs; only predictable with a constant bitrate."""
     profile = settings["replay"]
@@ -85,8 +94,7 @@ class Command:
         state_dir.mkdir(parents=True, exist_ok=True)
 
         # gsr runs a script path with (file, type) after each save; route it back to us
-        caelestia = shutil.which("caelestia") or sys.argv[0]
-        hook_path.write_text(f'#!/bin/sh\nexec "{caelestia}" replay saved "$1" "$2"\n')
+        hook_path.write_text(f'#!/bin/sh\nexec "{stable_executable("caelestia")}" replay saved "$1" "$2"\n')
         hook_path.chmod(0o755)
 
         args = [
