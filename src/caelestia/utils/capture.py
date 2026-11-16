@@ -212,6 +212,29 @@ def save_signal(seconds: int) -> int:
     return signal.SIGRTMIN + _RT_SIGNALS[seconds] if seconds in _RT_SIGNALS else signal.SIGUSR1
 
 
+def duration(path: Path) -> float:
+    try:
+        out = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], text=True
+        )
+        return float(out.strip())
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return 0
+
+
+def trim_to(path: Path, seconds: float) -> None:
+    """Keeps only the last `seconds`; the disk buffer saves whole segments, so clips can run long."""
+    if seconds <= 0 or duration(path) <= seconds + 3:
+        return
+    tmp = path.with_name(f".trim-{path.name}")
+    # Stream copy: lossless and fast, cuts at the nearest keyframe
+    cmd = ["ffmpeg", "-v", "error", "-y", "-sseof", f"-{seconds}", "-i", str(path), "-map", "0", "-c", "copy", str(tmp)]
+    if subprocess.run(cmd, stdin=subprocess.DEVNULL).returncode == 0:
+        tmp.replace(path)
+    else:
+        tmp.unlink(missing_ok=True)
+
+
 def stamp() -> str:
     return time.strftime("%Y%m%d_%H-%M-%S")
 

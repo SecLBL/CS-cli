@@ -13,6 +13,7 @@
   grim,
   fuzzel,
   gpu-screen-recorder,
+  ffmpeg-headless,
   dconf,
   killall,
   caelestia-shell,
@@ -51,6 +52,7 @@ python3.pkgs.buildPythonApplication {
       grim
       fuzzel
       gpu-screen-recorder
+      ffmpeg-headless
       dconf
       killall
     ]

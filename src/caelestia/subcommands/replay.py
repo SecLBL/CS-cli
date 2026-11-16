@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -159,7 +160,11 @@ class Command:
         if not pid:
             notify("Replay buffer is off", "Start it first to save clips")
             return
-        os.kill(pid, capture.save_signal(self.args.seconds or 0))
+        seconds = self.args.seconds or 0
+        # Remember the requested length; the save hook trims clips the recorder makes too long
+        wanted = seconds if capture.save_signal(seconds) != signal.SIGUSR1 else read_state().get("length", 0)
+        atomic_dump(state_path, {**read_state(), "pendingSeconds": wanted})
+        os.kill(pid, capture.save_signal(seconds))
 
     def codecs(self) -> None:
         try:
@@ -182,10 +187,11 @@ class Command:
         dest = src.with_name(f"clip_{capture.stamp()}{'_' + app if app else ''}{src.suffix}")
         src.rename(dest)
 
-        state = read_state()
-        atomic_dump(state_path, {**state, "lastSaved": str(dest), "lastSavedAt": time.time()})
-
         if settings["clipSound"]:
             capture.play_sound("camera-shutter")
+
+        state = read_state()
+        capture.trim_to(dest, state.get("pendingSeconds", 0))
+        atomic_dump(state_path, {**state, "lastSaved": str(dest), "lastSavedAt": time.time()})
         capture.notify_saved("Clip saved", dest)
         capture.cleanup(dest.parent, settings, "clip_*")
