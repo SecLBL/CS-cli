@@ -1,51 +1,18 @@
+import os
 import re
 import shutil
+import signal
 import subprocess
-import time
 from argparse import Namespace
-from datetime import datetime
 from pathlib import Path
 
-from caelestia.utils import hypr
+from caelestia.utils import capture, hypr
 from caelestia.utils.notify import close_notification, notify
-from caelestia.utils.paths import get_config, recording_notif_path, recording_path, recordings_dir
+from caelestia.utils.paths import c_state_dir, recording_notif_path, recording_path
 
-RECORDER = "gpu-screen-recorder"
-
-# Handles the "Recording stopped" notification actions in a tiny detached shell
-# process, so `caelestia record` can exit as soon as the recording is saved.
-_STOPPED_NOTIF_HANDLER = r"""
-path=$1
-uri=$2
-directory=$3
-
-action=$(notify-send -a caelestia-cli \
-    --action=watch=Watch \
-    --action=open=Open \
-    --action=delete=Delete \
-    "Recording stopped" \
-    "Recording saved in $path") || exit 0
-
-case "$action" in
-    watch)
-        exec xdg-open "$path"
-        ;;
-    open)
-        if ! dbus-send --session \
-            --dest=org.freedesktop.FileManager1 \
-            --type=method_call \
-            /org/freedesktop/FileManager1 \
-            org.freedesktop.FileManager1.ShowItems \
-            "array:string:$uri" \
-            "string:"; then
-            exec xdg-open "$directory"
-        fi
-        ;;
-    delete)
-        rm -f -- "$path"
-        ;;
-esac
-"""
+RECORDER = capture.RECORDER
+# First line: recorder pid, second line: the file it writes to
+pid_path: Path = c_state_dir / "record/pid"
 
 
 class Command:
@@ -56,19 +23,22 @@ class Command:
 
     def run(self) -> None:
         if self.args.pause:
-            subprocess.run(["pkill", "-USR2", "-f", RECORDER], stdout=subprocess.DEVNULL)
+            if pid := capture.read_pid(pid_path):
+                os.kill(pid, signal.SIGUSR2)
         elif self.proc_running():
             self.stop()
         else:
             self.start()
 
     def proc_running(self) -> bool:
-        return subprocess.run(["pidof", RECORDER], stdout=subprocess.DEVNULL).returncode == 0
+        return capture.read_pid(pid_path) is not None
 
     def intersects(self, a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
         return a[0] < b[0] + b[2] and a[0] + a[2] > b[0] and a[1] < b[1] + b[3] and a[1] + a[3] > b[1]
 
     def start(self) -> None:
+        settings = capture.get_settings()
+        profile = settings["record"]
         args = ["-w"]
 
         monitors = hypr.message("monitors")
@@ -94,35 +64,34 @@ class Command:
                 if self.intersects((monitor["x"], monitor["y"], monitor["width"], monitor["height"]), r):
                     rr = round(monitor["refreshRate"])
                     max_rr = max(max_rr, rr)
-            args += ["-f", str(max_rr)]
+            args += ["-f", str(capture.fps_for(profile, max_rr))]
+            args += capture.video_args(settings, profile, None)
         else:
-            focused_monitor = next(monitor for monitor in monitors if monitor["focused"])
+            focused_monitor = next((monitor for monitor in monitors if monitor["focused"]), None)
             if focused_monitor:
                 args += [
                     focused_monitor["name"],
                     "-f",
-                    str(round(focused_monitor["refreshRate"])),
+                    str(capture.fps_for(profile, focused_monitor["refreshRate"])),
                 ]
+            args += capture.video_args(settings, profile, focused_monitor)
 
         if self.args.sound:
-            args += ["-a", "default_output"]
+            args += capture.audio_args(settings, capture.audio_sources(settings)) or ["-a", "default_output"]
 
-        config = get_config()
-        try:
-            if "record" in config and "extraArgs" in config["record"]:
-                args += config["record"]["extraArgs"]
-        except TypeError as e:
-            raise ValueError(f"Config option 'record.extraArgs' should be an array: {e}")
+        args += capture.extra_args()
 
-        recording_path.parent.mkdir(parents=True, exist_ok=True)
+        output = recording_path.with_suffix(f".{settings['container']}")
+        output.parent.mkdir(parents=True, exist_ok=True)
         # The recorder outlives this command, so it must not inherit our stdio
         proc = subprocess.Popen(
-            [RECORDER, *args, "-o", str(recording_path)],
+            [RECORDER, *args, "-c", settings["container"], "-o", str(output)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
+        pid_path.write_text(f"{proc.pid}\n{output}\n")
 
         notif = notify("-p", "Recording started", "Recording...")
         recording_notif_path.write_text(notif)
@@ -139,17 +108,19 @@ class Command:
             pass
 
     def stop(self) -> None:
-        # Start killing recording process
-        subprocess.run(["pkill", "-f", RECORDER], stdout=subprocess.DEVNULL)
+        settings = capture.get_settings()
+        pid = capture.read_pid(pid_path)
+        output = Path(pid_path.read_text().splitlines()[1])
 
-        # Wait for recording to finish to avoid corrupted video file
-        while self.proc_running():
-            time.sleep(0.1)
+        # Stop and wait for the recording to finish to avoid a corrupted video file
+        capture.stop_pid(pid)
+        pid_path.unlink(missing_ok=True)
 
         # Move to recordings folder
-        new_path = recordings_dir / f"recording_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.mp4"
-        recordings_dir.mkdir(exist_ok=True, parents=True)
-        shutil.move(recording_path, new_path)
+        directory = capture.recordings_path(settings)
+        new_path = directory / f"recording_{capture.stamp()}{output.suffix}"
+        directory.mkdir(exist_ok=True, parents=True)
+        shutil.move(output, new_path)
 
         # Close start notification
         try:
@@ -161,23 +132,4 @@ class Command:
             file_uri = Path(new_path).resolve().as_uri() + "\n"
             subprocess.run(["wl-copy", "--type", "text/uri-list"], input=file_uri.encode())
 
-        recording = new_path.resolve()
-
-        # The action notification's lifetime is the user's interaction with it,
-        # not this command's, so hand it off to a detached lightweight handler
-        subprocess.Popen(
-            [
-                "sh",
-                "-c",
-                _STOPPED_NOTIF_HANDLER,
-                "sh",
-                str(recording),
-                recording.as_uri(),
-                str(recording.parent),
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            cwd="/",
-        )
+        capture.notify_saved("Recording stopped", new_path)

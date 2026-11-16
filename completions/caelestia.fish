@@ -1,7 +1,7 @@
 set -l seen '__fish_seen_subcommand_from'
 set -l has_opt '__fish_contains_opt'
 
-set -l commands shell toggle scheme screenshot record clipboard emoji wallpaper resizer install update
+set -l commands shell toggle scheme screenshot record replay clipboard emoji wallpaper resizer install update
 set -l not_seen "not $seen $commands"
 
 # Disable file completions
@@ -16,6 +16,7 @@ complete -c caelestia -n $not_seen -a 'toggle' -d 'Toggle a special workspace'
 complete -c caelestia -n $not_seen -a 'scheme' -d 'Manage the colour scheme'
 complete -c caelestia -n $not_seen -a 'screenshot' -d 'Take a screenshot'
 complete -c caelestia -n $not_seen -a 'record' -d 'Start a screen recording'
+complete -c caelestia -n $not_seen -a 'replay' -d 'Control the replay buffer'
 complete -c caelestia -n $not_seen -a 'clipboard' -d 'Open clipboard history'
 complete -c caelestia -n $not_seen -a 'emoji' -d 'Emoji/glyph utilities'
 complete -c caelestia -n $not_seen -a 'wallpaper' -d 'Manage the wallpaper'
@@ -109,6 +110,17 @@ complete -c caelestia -n "$seen screenshot" -s 'f' -l 'freeze' -d 'Freeze while 
 complete -c caelestia -n "$seen record" -s 'r' -l 'region' -d 'Capture region'
 complete -c caelestia -n "$seen record" -s 's' -l 'sound' -d 'Capture sound'
 complete -c caelestia -n "$seen record" -s 'c' -l 'clipboard' -d 'Copy recording path to clipboard'
+
+# Replay
+set -l replay_commands toggle start stop restart save status codecs
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'toggle' -d 'Start or stop the replay buffer'
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'start' -d 'Start the replay buffer'
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'stop' -d 'Stop without saving'
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'restart' -d 'Restart to apply new settings'
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'save' -d 'Save the buffer as a clip'
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'status' -d 'Print the state as JSON'
+complete -c caelestia -n "$seen replay && not $seen $replay_commands" -a 'codecs' -d 'List encodable video codecs'
+complete -c caelestia -n "$seen replay && $seen save" -a '10 30 60 300 600 1800' -d 'Seconds'
 
 # Clipboard
 complete -c caelestia -n "$seen clipboard" -s 'd' -l 'delete' -d 'Delete from cliboard history'

@@ -6,6 +6,7 @@ from caelestia.subcommands import (
     emoji,
     install,
     record,
+    replay,
     resizer,
     scheme,
     screenshot,
@@ -90,6 +91,26 @@ def parse_args() -> tuple[argparse.ArgumentParser, argparse.Namespace]:
     record_parser.add_argument("-s", "--sound", action="store_true", help="record audio")
     record_parser.add_argument("-p", "--pause", action="store_true", help="pause/resume the recording")
     record_parser.add_argument("-c", "--clipboard", action="store_true", help="copy recording path to clipboard")
+
+    # Create parser for replay opts
+    replay_parser = command_parser.add_parser("replay", help="control the replay buffer (instant replay)")
+    replay_parser.set_defaults(cls=replay.Command, action="toggle")
+    replay_command_parser = replay_parser.add_subparsers(
+        title="subcommands", dest="action", metavar="{toggle,start,stop,restart,save,status,codecs}"
+    )
+    replay_command_parser.add_parser("toggle", help="start or stop the replay buffer")
+    replay_command_parser.add_parser("start", help="start the replay buffer")
+    replay_command_parser.add_parser("stop", help="stop the replay buffer without saving")
+    replay_command_parser.add_parser("restart", help="restart the replay buffer to apply new settings")
+    replay_save_parser = replay_command_parser.add_parser("save", help="save the buffer as a clip")
+    replay_save_parser.add_argument(
+        "seconds", nargs="?", type=int, default=0, help="save only the last 10, 30, 60, 300, 600 or 1800 seconds"
+    )
+    replay_command_parser.add_parser("status", help="print the replay buffer state as JSON")
+    replay_command_parser.add_parser("codecs", help="list the video codecs this GPU can encode")
+    replay_saved_parser = replay_command_parser.add_parser("saved")
+    replay_saved_parser.add_argument("path")
+    replay_saved_parser.add_argument("type")
 
     # Create parser for clipboard opts
     clipboard_parser = command_parser.add_parser("clipboard", help="open clipboard history")
