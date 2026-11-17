@@ -23,7 +23,7 @@ default_clips_dir: Path = Path(os.getenv("CAELESTIA_CLIPS_DIR", videos_dir / "Cl
 
 DEFAULTS: dict[str, Any] = {
     "codec": "auto",
-    "vulkan": False,
+    "encoder": "gpu",
     "container": "mkv",
     "cursor": True,
     "framerateMode": "vfr",
@@ -152,8 +152,13 @@ def scaled_size(monitor: dict[str, Any], cap: int) -> str | None:
 def video_args(settings: dict[str, Any], profile: dict[str, Any], monitor: dict[str, Any] | None) -> list[str]:
     args = []
     codec = settings["codec"]
-    if codec != "auto":
-        args += ["-k", f"{codec}_vulkan" if settings["vulkan"] else codec]
+    if settings["encoder"] == "cpu":
+        # Software encoding only supports H.264
+        args += ["-encoder", "cpu", "-k", "h264"]
+    elif settings["encoder"] == "vulkan":
+        args += ["-k", f"{'h264' if codec == 'auto' else codec}_vulkan"]
+    elif codec != "auto":
+        args += ["-k", codec]
     if profile["bitrateMode"] == "cbr":
         args += ["-bm", "cbr", "-q", str(profile["bitrate"])]
     else:
